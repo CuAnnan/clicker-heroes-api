@@ -53,14 +53,6 @@ class ClickerHeroes
 	protected $errors = [];
 
 	/**
-	 * Construct for the class.
-	 */
-	public function __construst()
-	{
-		// Currently not in use
-	}
-	
-	/**
 	 * This method loads a game save from a pasteBinURL
 	 * The format of a pastebin URI is http://pastebin.com/WLbfZShj
 	 * The raw text file is http://pastebin.com/raw.php?i=WLbfZShj
