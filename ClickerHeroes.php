@@ -5,11 +5,13 @@
  * This class has methods to create, encrypt, decrypt
  * and manipulate game play data.
  *
- * @package  Clicker Heroes API
- * @author   Michael Curry <kernelcurry@gmail.com>
+ * @package	Clicker Heroes API
+ * @author	Michael Curry <kernelcurry@gmail.com>
+ * @author	Éamonn "Wing" Kearns <eamonn.kearns@so-4pt.net>
  */
 
-class ClickerHeroes {
+class ClickerHeroes
+{
 
 	/**
 	 * Known salts
@@ -57,6 +59,48 @@ class ClickerHeroes {
 	{
 		// Currently not in use
 	}
+	
+	/**
+	 * This method loads a game save from a pasteBinURL
+	 * The format of a pastebin URI is http://pastebin.com/WLbfZShj
+	 * The raw text file is http://pastebin.com/raw.php?i=WLbfZShj
+	 * @param string $pasteBinURI The URI of the paste bin file
+	 */
+	public function loadFromPasteBin($pasteBinURI)
+	{
+		$rawURL = $pasteBinURI;
+		$standardURI = strstr($pasteBinURI, 'raw.php')===FALSE;
+		if($standardURI)
+		{
+			$key = array_pop(explode('/', $pasteBinURI));
+			$rawURL = 'http://pastebin.com/raw.php?i='.$key;
+		}
+		$file = file_get_contents(
+			$rawURL,
+			false,
+			stream_context_create(
+				array(
+					'http'=>array(
+						'method'=>"GET",
+						'header'=>"Accept-language: en\r\nCookie: foo=bar\r\n"
+					)
+				)
+			)
+		);
+		
+		$file = trim($file);
+		return $this->importSave($file);
+	}
+	
+	public function asJSON()
+	{
+		return json_encode($this->save_decrypted);
+	}
+	
+	public function __toString()
+	{
+		return $this->exportSave();
+	}
 
 	/**
 	 * This function uses a game save to populate required variables.
@@ -66,13 +110,9 @@ class ClickerHeroes {
 	 */
 	public function importSave($value)
 	{
-		$this->save_encrypted = $value;
+		$this->save_encrypted = trim($value);
 		$this->getDelimiter();
-		if ( ! $this->decryptSave())
-		{
-			$this->errors[] = 'importSave() | decrypting game save encountered a problem.';
-		}
-
+		$this->decryptSave();
 		return $this;
 	}
 
@@ -100,37 +140,43 @@ class ClickerHeroes {
 
 	protected function decryptSave()
 	{
-		$result = explode($this->delimiter,$this->save_encrypted);
-
-		foreach ($this->salts as $salt)
+		list($saltedData, $saveHash) = explode($this->delimiter, $this->save_encrypted);
+		$dataLength = strlen($saltedData); 
+		$saltFound = false;
+		$saltCounts = count($this->salts);
+		$saltIndex = 0;
+		
+		// this should not be in the loop, it is not contingent on changes in the salt stuff, so we shouldn't be doing it more than once
+		$check = '';
+		for ($i = 0; $i < $dataLength; $i += 2)
 		{
-			$check = '';
-
-			for ($i = 0; $i < strlen($result[0]); $i += 2)
-			{
-				$check .= $result[0][$i];
-			}
-
+			$check .= $saltedData[$i];
+		}
+		
+		while(!$saltFound && $saltIndex < $saltCounts)
+		{
+			$salt = $this->salts[$saltIndex];
 			$hash = md5($check . $salt);
-			if ( $hash == $result[1]) {
+			if($hash == $saveHash)
+			{
 				$this->salt_used = $salt;
 				$this->save_decrypted = json_decode(base64_decode($check));
-				return true;
+				$saltFound = true;
 			}
+			$saltIndex++;
 		}
-
-		// salts do not work
-		return false;
+		
+		if(!$saltFound)
+		{
+			// salts do not work
+			throw new Exception('Salts not working');
+		}
 	}
 
 	protected function getDelimiter()
 	{
-		if (is_null($this->save_decrypted)) {
-			$this->delimiter = substr($this->save_encrypted, strlen($this->save_encrypted) - 48, 16);
-			return true;
-		}
-
-		return false;
+		// don't need to subtract 48 from the string length, substr allows negative values to do just that
+		$this->delimiter = substr($this->save_encrypted, -48, 16);
 	}
 
 	public function resetCooldowns()
